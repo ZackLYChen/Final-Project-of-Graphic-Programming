@@ -9,7 +9,7 @@ uniform float time;
 uniform vec2 mouse;
 
 const float PI = 3.1415926535;
-varying vec2 uv;
+in vec2 uv;
 layout(location = 0)out vec4 fragColor;
 
 
@@ -176,16 +176,31 @@ void main(void) {
 	   fragColor = sum;
 	}
 	else if (modes==7){
-		float kernel[KERNEL_SIZE] = { 0.0, 1.0, 0.0,
-									1.0, -4.0, 1.0,
-									0.0, 1.0, 0.0 };
+		float kernel[KERNEL_SIZE] ;
+		 kernel[0]=0.0;
+		 kernel[1]=1.0;
+		 kernel[2]=0.0;
+		 kernel[3]=1.0;
+		 kernel[4]=-4.0;
+		 kernel[5]=1.0;
+		 kernel[6]=0.0;
+		 kernel[7]=1.0;
+		 kernel[8]=0.0;
 	
 		float step_w = 1.0/img_size.x;
 		float step_h = 1.0/img_size.y;
 	
-		vec2 offset[KERNEL_SIZE] = { vec2(-step_w, -step_h), vec2(0.0, -step_h), vec2(step_w, -step_h), 
-	                                   vec2(-step_w, 0.0), vec2(0.0, 0.0), vec2(step_w, 0.0), 
-									   vec2(-step_w, step_h), vec2(0.0, step_h), vec2(step_w, step_h) };
+		vec2 offset[KERNEL_SIZE];
+		 offset[0] =vec2(-step_w, -step_h);
+		 offset[1] =vec2(0.0, -step_h);
+		 offset[2] =vec2(step_w, -step_h);
+		 offset[3] = vec2(-step_w, 0.0);
+		 offset[4] =vec2(0.0, 0.0);
+		 offset[5] = vec2(step_w, 0.0);
+		 offset[6] = vec2(-step_w, step_h);
+		 offset[7] = vec2(0.0, step_h);
+		 offset[8] =vec2(step_w, step_h) ;
+
 		int i = 0;
 		vec4 sum = vec4(0.0);
 		for( i=0; i<KERNEL_SIZE; i++ )

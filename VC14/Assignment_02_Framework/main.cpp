@@ -10,6 +10,7 @@
 #include "fbxloader.h"
 #include <IL/il.h>
 #include <iostream>
+#include <math.h>
 #define  PI 3.14159265358979323846
 #define  deg2rad(x) ((x)*((PI)/(180.0)))
 #define MENU_TIMER_START 1
@@ -25,6 +26,7 @@
 #define MENU_LAPLA 11
 #define MENU_MAG 12
 #define MENU_VOL 13
+#define MENU_LOCK 14
 GLubyte timer_cnt = 0;
 GLfloat timer_cnt1 = 0.0;
 int states = 0;
@@ -36,12 +38,18 @@ double viewportAspect;
 int pri = 0;
 using namespace glm;
 using namespace std;
-vec3 eye(-40.0f, 20.0f, 0.0f);
-vec3 center(0.0f, 20.0f, 0.0f);
+vec3 eye(0.8f, 17.5f, 0.0f);
+vec3 center(-3.2f, 17.5f, 0.0f);
 vec3 up(0.0f, 1.0f, 0.0f);
+vec3 initeye(0.8f, 17.5f, 0.0f);
+vec3 initcenter(-3.2f, 17.5f, 0.0f);
+vec3 initup(0.0f, 1.0f, 0.0f);
+vec3 zombie(0.0f,0.0f,0.0f);
+float zombierad = 0.0f;
 int fromx, fromy;
 float rotx = 0, roty = 0, rotxn, rotyn;
 mat4 mvp;
+mat4 mvp2;
 mat4 rotate = mat4(1.0f);
 GLint um4mvp;
 int state = 1;
@@ -59,6 +67,8 @@ struct obj {
 obj object[4];
 string err;
 GLuint program;
+bool cameralock = false;
+bool pressed = false;
 
 GLuint modes;
 GLuint img_size;
@@ -209,18 +219,18 @@ void My_Init()
 
 void My_LoadModels()
 {
-	for (pri = 0; pri <4; pri++) {
+	for (pri = 0; pri <7; pri++) {
 		bool ret;	// TODO: If You Want to Load FBX, Use these. The Returned Values are The Same.
 					// Save this Object, You Will Need It to Retrieve Animations Later.
 					// bool ret2 = LoadFbx(myFbx, shapes, materials, err, "sponza.mtl");
 		if (pri == 0) {
-			ret = tinyobj::LoadObj(object[0].shapes, object[0].materials, err, "sponza.obj");
+			ret = tinyobj::LoadObj(object[0].shapes, object[0].materials, err, "summoner_rift.obj");
 			ob = 0;
 		}
 		else {
-			if (pri == 1)ret = LoadFbx(myFbx[pri], object[pri].shapes, object[pri].materials, err, "zombie_fury.FBX");
-			else if (pri == 2)ret = LoadFbx(myFbx[pri], object[pri].shapes, object[pri].materials, err, "zombie_dead.FBX");
-			else ret = LoadFbx(myFbx[pri], object[pri].shapes, object[pri].materials, err, "zombie_walk.FBX");
+			if (pri == 1)ret = LoadFbx(myFbx[pri], object[pri].shapes, object[pri].materials, err, "zombie_walk.FBX");
+			else if (pri == 2)ret = LoadFbx(myFbx[pri], object[pri].shapes, object[pri].materials, err, "zombie_fury.FBX");
+			else ret = LoadFbx(myFbx[pri], object[pri].shapes, object[pri].materials, err, "zombie_dead.FBX");
 			ob = pri;
 		}
 		if (ret)
@@ -240,16 +250,16 @@ void My_LoadModels()
 				ilGenImages(1, &ilTexName);
 				ilBindImage(ilTexName);
 				//	cout << object[ob].materials[i].diffuse_texname << endl;
-				if (ilLoadImage(object[ob].materials[i].diffuse_texname.c_str()))
+				if (ilLoadImage(object[ob].materials[i].diffuse_texname.c_str()) && ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE))
 				{
-					unsigned char *data = new unsigned char[ilGetInteger(IL_IMAGE_WIDTH) * ilGetInteger(IL_IMAGE_HEIGHT) * 3];
+					unsigned char *data = new unsigned char[ilGetInteger(IL_IMAGE_WIDTH) * ilGetInteger(IL_IMAGE_HEIGHT) * 4];
 					int Image_Width = ilGetInteger(IL_IMAGE_WIDTH);
 					int Image_Height = ilGetInteger(IL_IMAGE_HEIGHT);
-					ilCopyPixels(0, 0, 0, ilGetInteger(IL_IMAGE_WIDTH), ilGetInteger(IL_IMAGE_HEIGHT), 1, IL_RGB, IL_UNSIGNED_BYTE, data);
+					ilCopyPixels(0, 0, 0, ilGetInteger(IL_IMAGE_WIDTH), ilGetInteger(IL_IMAGE_HEIGHT), 1, IL_RGBA, IL_UNSIGNED_BYTE, data);
 					// TODO: Generate an OpenGL Texture and use the [unsigned char *data] as Input Here.
 					glGenTextures(1, &object[ob].texture[i]);
 					glBindTexture(GL_TEXTURE_2D, object[ob].texture[i]);
-					glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, Image_Width, Image_Height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+					glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, Image_Width, Image_Height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
 					glGenerateMipmap(GL_TEXTURE_2D);
 					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
 					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
@@ -316,16 +326,23 @@ void My_Display()
 
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-	for (pri = 0; pri <= 1; pri++) {
+	for (pri = 0; pri <= 5; pri++) {
 		// TODO: For Your FBX Model, Get New Animation Here
 
 		glUseProgram(program);
+		if (pressed) {
+			state = 1;
+		}
+		else {
+			state = 2;
+		}
 
-
-		if (pri == 1) {
+		if (pri == 1 ) {
 			std::vector<tinyobj::shape_t> new_shapes;
 			GetFbxAnimation(myFbx[state], new_shapes, 0.01*(timer_cnt % 100)); // The Last Parameter is A Float in [0, 1], Specifying The Animation Location You Want to Retrieve
-			glUniformMatrix4fv(um4mvp, 1, GL_FALSE, value_ptr(mvp*(glm::translate(mat4(1.0), vec3(0, 9, 0))*(glm::rotate<float>(mat4(1.0f), deg2rad(-90.0f), vec3(1, 0, 0))))));
+			//const float *m= (const float*)value_ptr(mvp*(glm::scale<float>(mat4(1.0f), vec3(0.025f, 0.025f, 0.025f))*(glm::translate(mat4(1.0), vec3(0+40*zombie.x, 700+40*zombie.y, 0+40*zombie.z))*(glm::rotate<float>(mat4(1.0f), deg2rad(-90.0f), vec3(1, 0, 0))))));
+			
+			glUniformMatrix4fv(um4mvp, 1, GL_FALSE, value_ptr(mvp*(glm::scale<float>(mat4(1.0f), vec3(0.01f, 0.01f, 0.01f))*(glm::translate(mat4(1.0), vec3(0 + 100 * zombie.x, 1730 + 100 * zombie.y, 100 * zombie.z)))*(glm::rotate<float>(mat4(1.0f), deg2rad(-90.0f), vec3(1, 0, 0)))*(glm::rotate<float>(mat4(1.0f), deg2rad(zombierad), vec3(0, 0, 1))))));
 			ob = state;
 			for (int i = 0; i < new_shapes.size(); i++)
 			{
@@ -339,6 +356,7 @@ void My_Display()
 					glBufferSubData(GL_ARRAY_BUFFER, (j * 8 * sizeof(float)), 3 * sizeof(float), &(new_shapes[i].mesh.positions.data()[3 * j]));
 				}
 			}
+			pressed = false;
 		}
 
 		else {
@@ -393,8 +411,13 @@ void My_Reshape(int width, int height)
 {
 	glViewport(0, 0, width, height);
 	viewportAspect = (double)width / (double)height;
-	mvp = perspective(deg2rad(60.0f), viewportAspect, 0.3, 5000.0);
-	mvp = mvp * lookAt(eye, center, up)*glm::rotate<float>(mat4(1.0f), deg2rad(-roty), vec3(0, 0, 1))*glm::rotate<float>(mat4(1.0f), deg2rad(-rotx), vec3(0, 1, 0));
+	mvp = perspective(deg2rad(60.0f), viewportAspect, 0.3, 500.0);
+	mvp2 = perspective(deg2rad(60.0f), viewportAspect, 0.3, 500.0);
+	
+	
+		mvp = mvp * lookAt(eye, center, up)*glm::rotate<float>(mat4(1.0f), deg2rad(-roty), vec3(0, 0, 1))*glm::rotate<float>(mat4(1.0f), deg2rad(-rotx), vec3(0, 1, 0));
+	
+	//glm::translate(mat4(1.0), vec3(0 + 40 * zombie.x, 700 + 40 * zombie.y, 0)
 	glDeleteRenderbuffers(1, &depthrbo);
 	glDeleteTextures(1, &fboDataTexture);
 	glGenRenderbuffers(1, &depthrbo);
@@ -420,7 +443,7 @@ void My_Reshape(int width, int height)
 
 void My_Timer(int val)
 {
-	timer_cnt++;
+	timer_cnt+=4;
 	timer_cnt1 = timer_cnt1 + 1.0;
 	glutPostRedisplay();
 	if (timer_enabled)
@@ -437,8 +460,12 @@ void MouseMotion(int x, int y) {
 		dy = y - fromy;
 		rotx = rotxn + dx / 10;
 		roty = rotyn + dy / 10;
-		mvp = perspective(deg2rad(60.0f), viewportAspect, 0.3, 5000.0);
+		mvp = perspective(deg2rad(60.0f), viewportAspect, 0.3, 500.0);
 		mvp = mvp * lookAt(eye, center, up)*glm::rotate<float>(mat4(1.0f), deg2rad(-roty), vec3(0, 0, 1))*glm::rotate<float>(mat4(1.0f), deg2rad(-rotx), vec3(0, 1, 0));
+		
+		cout << eye.x << "," << eye.y << "," << eye.z << endl;
+		cout << center.x << "," << center.y << "," << center.z << endl;
+
 	}
 	else glUniform2f(mouse_uni, (float)x, (float)glutGet(GLUT_WINDOW_HEIGHT) - (float)y);
 }
@@ -456,60 +483,160 @@ void My_Mouse(int button, int state, int x, int y)
 	{
 		cout << x << "," << y << endl;
 		button_down = false;
+		
 	}
 	else if (button == 3)
 	{
 		eye.x += 1.0f;
 		center.x += 1.0f;
-		mvp = perspective(deg2rad(60.0f), viewportAspect, 0.3, 5000.0);
+		mvp = perspective(deg2rad(60.0f), viewportAspect, 0.3, 500.0);
 		mvp = mvp * lookAt(eye, center, up)*glm::rotate<float>(mat4(1.0f), deg2rad(-roty), vec3(0, 0, 1))*glm::rotate<float>(mat4(1.0f), deg2rad(-rotx), vec3(0, 1, 0));
 	}
 	else if (button == 4) {
 		eye.x -= 1.0f;
 		center.x -= 1.0f;
-		mvp = perspective(deg2rad(60.0f), viewportAspect, 0.3, 5000.0);
+		mvp = perspective(deg2rad(60.0f), viewportAspect, 0.3, 500.0);
 		mvp = mvp * lookAt(eye, center, up)*glm::rotate<float>(mat4(1.0f), deg2rad(-roty), vec3(0, 0, 1))*glm::rotate<float>(mat4(1.0f), deg2rad(-rotx), vec3(0, 1, 0));
 	}
 }
 
 void My_Keyboard(unsigned char key, int x, int y)
 {
+	
 	switch (key) {
 	case 'x':
-		eye.y += 1.0f;
-		center.y += 1.0f;
-		mvp = perspective(deg2rad(60.0f), viewportAspect, 0.3, 5000.0);
-		mvp = mvp * lookAt(eye, center, up)*glm::rotate<float>(mat4(1.0f), deg2rad(-roty), vec3(0, 0, 1))*glm::rotate<float>(mat4(1.0f), deg2rad(-rotx), vec3(0, 1, 0));
-		break;
+		eye.y += 0.1f;
+		center.y += 0.1f;
+		mvp = perspective(deg2rad(60.0f), viewportAspect, 0.3, 500.0);
+		if (cameralock)
+		{
+			mvp = mvp * lookAt(initeye, initcenter, initup)*glm::translate<float>(mat4(1.0f), -vec3(zombie.x, zombie.y, zombie.z))*glm::translate<float>(mat4(1.0f), vec3(zombie.x, zombie.y, zombie.z))*glm::rotate<float>(mat4(1.0f), deg2rad(-zombierad), vec3(0, 1, 0))*glm::translate<float>(mat4(1.0f), -vec3(zombie.x, zombie.y, zombie.z));
+		}
+		else {
+			mvp = mvp * lookAt(eye, center, up)*glm::rotate<float>(mat4(1.0f), deg2rad(-roty), vec3(0, 0, 1))*glm::rotate<float>(mat4(1.0f), deg2rad(-rotx), vec3(0, 1, 0));
+
+		}break;
 	case 'z':
-		eye.y -= 1.0f;
-		center.y -= 1.0f;
-		mvp = perspective(deg2rad(60.0f), viewportAspect, 0.3, 5000.0);
-		mvp = mvp * lookAt(eye, center, up)*glm::rotate<float>(mat4(1.0f), deg2rad(-roty), vec3(0, 0, 1))*glm::rotate<float>(mat4(1.0f), deg2rad(-rotx), vec3(0, 1, 0));
-		break;
-	case 'w':
-		eye.x += 1.0f;
-		center.x += 1.0f;
-		mvp = perspective(deg2rad(60.0f), viewportAspect, 0.3, 5000.0);
-		mvp = mvp * lookAt(eye, center, up)*glm::rotate<float>(mat4(1.0f), deg2rad(-roty), vec3(0, 0, 1))*glm::rotate<float>(mat4(1.0f), deg2rad(-rotx), vec3(0, 1, 0));
+		eye.y -= 0.1f;
+		center.y -= 0.1f;
+		mvp = perspective(deg2rad(60.0f), viewportAspect, 0.3, 500.0);
+		if (cameralock)
+		{
+			mvp = mvp * lookAt(initeye, initcenter, initup)*glm::translate<float>(mat4(1.0f), -vec3(zombie.x, zombie.y, zombie.z))*glm::translate<float>(mat4(1.0f), vec3(zombie.x, zombie.y, zombie.z))*glm::rotate<float>(mat4(1.0f), deg2rad(-zombierad), vec3(0, 1, 0))*glm::translate<float>(mat4(1.0f), -vec3(zombie.x, zombie.y, zombie.z));
+		}
+		else {
+			mvp = mvp * lookAt(eye, center, up)*glm::rotate<float>(mat4(1.0f), deg2rad(-roty), vec3(0, 0, 1))*glm::rotate<float>(mat4(1.0f), deg2rad(-rotx), vec3(0, 1, 0));
+		}
 		break;
 	case 's':
-		eye.x -= 1.0f;
-		center.x -= 1.0f;
-		mvp = perspective(deg2rad(60.0f), viewportAspect, 0.3, 5000.0);
-		mvp = mvp * lookAt(eye, center, up)*glm::rotate<float>(mat4(1.0f), deg2rad(-roty), vec3(0, 0, 1))*glm::rotate<float>(mat4(1.0f), deg2rad(-rotx), vec3(0, 1, 0));
+		eye.x += 0.1f;
+		center.x += 0.1f;
+		mvp = perspective(deg2rad(60.0f), viewportAspect, 0.3, 500.0);
+		if (cameralock)
+		{
+			mvp = mvp * lookAt(initeye, initcenter, initup)*glm::translate<float>(mat4(1.0f), -vec3(zombie.x, zombie.y, zombie.z))*glm::translate<float>(mat4(1.0f), vec3(zombie.x, zombie.y, zombie.z))*glm::rotate<float>(mat4(1.0f), deg2rad(-zombierad), vec3(0, 1, 0))*glm::translate<float>(mat4(1.0f), -vec3(zombie.x, zombie.y, zombie.z));
+		}
+		else {
+			mvp = mvp * lookAt(eye, center, up)*glm::rotate<float>(mat4(1.0f), deg2rad(-roty), vec3(0, 0, 1))*glm::rotate<float>(mat4(1.0f), deg2rad(-rotx), vec3(0, 1, 0));
+		}
 		break;
-	case 'a':
-		eye.z -= 1.0f;
-		center.z -= 1.0f;
-		mvp = perspective(deg2rad(60.0f), viewportAspect, 0.3, 5000.0);
-		mvp = mvp * lookAt(eye, center, up)*glm::rotate<float>(mat4(1.0f), deg2rad(-roty), vec3(0, 0, 1))*glm::rotate<float>(mat4(1.0f), deg2rad(-rotx), vec3(0, 1, 0));
+	case 'w':
+		eye.x -= 0.1f;
+		center.x -= 0.1f;
+		mvp = perspective(deg2rad(60.0f), viewportAspect, 0.3, 500.0);
+		if (cameralock)
+		{
+			mvp = mvp * lookAt(initeye, initcenter, initup)*glm::translate<float>(mat4(1.0f), -vec3(zombie.x, zombie.y, zombie.z))*glm::translate<float>(mat4(1.0f), vec3(zombie.x, zombie.y, zombie.z))*glm::rotate<float>(mat4(1.0f), deg2rad(-zombierad), vec3(0, 1, 0))*glm::translate<float>(mat4(1.0f), -vec3(zombie.x, zombie.y, zombie.z));
+		}
+		else {
+			mvp = mvp * lookAt(eye, center, up)*glm::rotate<float>(mat4(1.0f), deg2rad(-roty), vec3(0, 0, 1))*glm::rotate<float>(mat4(1.0f), deg2rad(-rotx), vec3(0, 1, 0));
+		}
 		break;
 	case 'd':
-		eye.z += 1.0f;
-		center.z += 1.0f;
-		mvp = perspective(deg2rad(60.0f), viewportAspect, 0.3, 5000.0);
-		mvp = mvp * lookAt(eye, center, up)*glm::rotate<float>(mat4(1.0f), deg2rad(-roty), vec3(0, 0, 1))*glm::rotate<float>(mat4(1.0f), deg2rad(-rotx), vec3(0, 1, 0));
+		eye.z -= 0.1f;
+		center.z -= 0.1f;
+		mvp = perspective(deg2rad(60.0f), viewportAspect, 0.3, 500.0);
+		if (cameralock)
+		{
+			mvp = mvp * lookAt(initeye, initcenter, initup)*glm::translate<float>(mat4(1.0f), -vec3(zombie.x, zombie.y, zombie.z))*glm::translate<float>(mat4(1.0f), vec3(zombie.x, zombie.y, zombie.z))*glm::rotate<float>(mat4(1.0f), deg2rad(-zombierad), vec3(0, 1, 0))*glm::translate<float>(mat4(1.0f), -vec3(zombie.x, zombie.y, zombie.z));
+		}
+		else {
+			mvp = mvp * lookAt(eye, center, up)*glm::rotate<float>(mat4(1.0f), deg2rad(-roty), vec3(0, 0, 1))*glm::rotate<float>(mat4(1.0f), deg2rad(-rotx), vec3(0, 1, 0));
+		}
+		break;
+	case 'a':
+		eye.z += 0.1f;
+		center.z += 0.1f;
+		mvp = perspective(deg2rad(60.0f), viewportAspect, 0.3, 500.0);
+		if (cameralock)
+		{
+			mvp = mvp * lookAt(initeye, initcenter, initup)*glm::translate<float>(mat4(1.0f), -vec3(zombie.x, zombie.y, zombie.z))*glm::translate<float>(mat4(1.0f), vec3(zombie.x, zombie.y, zombie.z))*glm::rotate<float>(mat4(1.0f), deg2rad(-zombierad), vec3(0, 1, 0))*glm::translate<float>(mat4(1.0f), -vec3(zombie.x, zombie.y, zombie.z));
+		}
+		else {
+			mvp = mvp * lookAt(eye, center, up)*glm::rotate<float>(mat4(1.0f), deg2rad(-roty), vec3(0, 0, 1))*glm::rotate<float>(mat4(1.0f), deg2rad(-rotx), vec3(0, 1, 0));
+		}
+		break;
+
+	case 'i':
+		pressed = true;
+		eye.x -= 0.1f*cos(deg2rad(-zombierad));
+		eye.z -= 0.1f*sin(deg2rad(-zombierad));
+		zombie.x -= 0.1f*cos(deg2rad(-zombierad));
+		zombie.z -= 0.1f*sin(deg2rad(-zombierad));
+		center.x -= 0.1f*cos(deg2rad(-zombierad));
+		center.z -= 0.1f*sin(deg2rad(-zombierad));
+		mvp = perspective(deg2rad(60.0f), viewportAspect, 0.3, 500.0);
+		if (cameralock)
+		{
+			mvp = mvp * lookAt(initeye, initcenter, initup)*glm::translate<float>(mat4(1.0f), -vec3(zombie.x, zombie.y, zombie.z))*glm::translate<float>(mat4(1.0f), vec3(zombie.x, zombie.y, zombie.z))*glm::rotate<float>(mat4(1.0f), deg2rad(-zombierad), vec3(0, 1, 0))*glm::translate<float>(mat4(1.0f), -vec3(zombie.x, zombie.y, zombie.z));
+		}
+		else {
+			mvp = mvp * lookAt(eye, center, up)*glm::rotate<float>(mat4(1.0f), deg2rad(-roty), vec3(0, 0, 1))*glm::rotate<float>(mat4(1.0f), deg2rad(-rotx), vec3(0, 1, 0));
+		}
+		break;
+	case 'k':
+		pressed = true;
+		eye.x += 0.1f*cos(deg2rad(-zombierad));
+		eye.z += 0.1f*sin(deg2rad(-zombierad));
+		zombie.x += 0.1f*cos(deg2rad(-zombierad));
+		zombie.z += 0.1f*sin(deg2rad(-zombierad));
+		center.x += 0.1f*cos(deg2rad(-zombierad));
+		center.z += 0.1f*sin(deg2rad(-zombierad));
+		mvp = perspective(deg2rad(60.0f), viewportAspect, 0.3, 500.0);
+		if (cameralock)
+		{
+			mvp = mvp * lookAt(initeye, initcenter, initup)*glm::translate<float>(mat4(1.0f), -vec3(zombie.x, zombie.y, zombie.z))*glm::translate<float>(mat4(1.0f), vec3(zombie.x, zombie.y, zombie.z))*glm::rotate<float>(mat4(1.0f), deg2rad(-zombierad), vec3(0, 1, 0))*glm::translate<float>(mat4(1.0f), -vec3(zombie.x, zombie.y, zombie.z));
+		}
+		else {
+			mvp = mvp * lookAt(eye, center, up)*glm::rotate<float>(mat4(1.0f), deg2rad(-roty), vec3(0, 0, 1))*glm::rotate<float>(mat4(1.0f), deg2rad(-rotx), vec3(0, 1, 0));
+		}
+		break;
+	case 'l':
+		pressed = true;
+		zombierad -= 3;
+		//roty += 1;
+		mvp = perspective(deg2rad(60.0f), viewportAspect, 0.3, 500.0);
+		if (cameralock)
+		{
+			mvp = mvp * lookAt(initeye, initcenter, initup)*glm::translate<float>(mat4(1.0f), -vec3(zombie.x, zombie.y, zombie.z))*glm::translate<float>(mat4(1.0f), vec3(zombie.x, zombie.y, zombie.z))*glm::rotate<float>(mat4(1.0f), deg2rad(-zombierad), vec3(0, 1, 0))*glm::translate<float>(mat4(1.0f), -vec3(zombie.x, zombie.y, zombie.z));
+		}
+		else {
+			mvp = mvp * lookAt(eye, center, up)*glm::rotate<float>(mat4(1.0f), deg2rad(-roty), vec3(0, 1, 0));
+			//*glm::rotate<float>(mat4(1.0f), deg2rad(-roty), vec3(0, 0, 1))*glm::rotate<float>(mat4(1.0f), deg2rad(-rotx), vec3(0, 1, 0));
+		}
+		break;
+	case 'j':
+		pressed = true;
+		zombierad += 3;
+		//roty -= 1;
+		mvp = perspective(deg2rad(60.0f), viewportAspect, 0.3, 500.0);
+		if (cameralock)
+		{
+			mvp = mvp * lookAt(initeye, initcenter, initup)*glm::translate<float>(mat4(1.0f), -vec3(zombie.x, zombie.y, zombie.z))*glm::translate<float>(mat4(1.0f), vec3(zombie.x, zombie.y, zombie.z))*glm::rotate<float>(mat4(1.0f), deg2rad(-zombierad), vec3(0, 1 ,0))*glm::translate<float>(mat4(1.0f), -vec3(zombie.x, zombie.y, zombie.z));
+		}
+		else {
+			mvp = mvp * lookAt(eye, center, up)*glm::rotate<float>(mat4(1.0f), deg2rad(-roty), vec3(0, 1, 0));
+		}
 		break;
 	default:
 		printf("Other special key is pressed at (%d, %d)\n", x, y);
@@ -584,6 +711,21 @@ void My_Menu(int id)
 		glUniform1i(modes, 9);
 		glUniform2f(img_size, glutGet(GLUT_WINDOW_WIDTH), glutGet(GLUT_WINDOW_HEIGHT));
 		break;
+	case MENU_LOCK:
+		if (cameralock) {
+			cameralock = false;
+		}
+		else {
+			printf("cameralock\n");
+			cameralock = true;
+			mvp = perspective(deg2rad(60.0f), viewportAspect, 0.3, 500.0);
+			if (cameralock)
+			{
+				mvp = mvp * lookAt(initeye, initcenter, initup)*glm::translate<float>(mat4(1.0f), -vec3(zombie.x, zombie.y, zombie.z))*glm::translate<float>(mat4(1.0f), vec3(zombie.x, zombie.y, zombie.z))*glm::rotate<float>(mat4(1.0f), deg2rad(-zombierad), vec3(0, 1, 0))*glm::translate<float>(mat4(1.0f), -vec3(zombie.x, zombie.y, zombie.z));
+			}
+		}
+
+		break			;
 	case MENU_TIMER_STOP:
 		timer_enabled = false;
 		break;
@@ -638,6 +780,7 @@ int main(int argc, char *argv[])
 	glutAddMenuEntry("LAPLACIAN", MENU_LAPLA); 
 	glutAddMenuEntry("MAGNIFIER", MENU_MAG);
 	glutAddMenuEntry("RADICAL BLUR", MENU_VOL);
+	glutAddMenuEntry("CAMERALOCK", MENU_LOCK);
 	glutSetMenu(menu_main);
 	glutAttachMenu(GLUT_RIGHT_BUTTON);
 	////////////////////////////

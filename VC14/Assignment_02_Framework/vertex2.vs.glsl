@@ -1,7 +1,7 @@
 #version 410 core
 layout (location = 5) in vec2 position;
 layout (location = 6) in vec2 texcoord;
-varying vec2 uv;
+out vec2 uv;
 out VS_OUT { 
 	vec2 texcoord; 
 } vs_out;
